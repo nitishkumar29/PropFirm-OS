@@ -139,6 +139,26 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           payouts: [...state.payouts, { ...payout, id: crypto.randomUUID() }],
         })),
+      recordPayout: (payout) =>
+        set((state) => {
+          const account = state.accounts.find((entry) => entry.id === payout.accountId);
+          const firm = account?.firm ?? payout.firm;
+          const newPayout = { ...payout, id: crypto.randomUUID(), firm };
+          const newFlowNode: FlowNodeModel = {
+            id: crypto.randomUUID(),
+            type: "Payout",
+            label: `${firm} payout`,
+            amount: payout.amount,
+            date: payout.date,
+            notes: payout.notes,
+            tags: ["payout"],
+            parentId: account ? `account-${account.id}` : undefined,
+          };
+          return {
+            payouts: [...state.payouts, newPayout],
+            flowNodes: [...state.flowNodes, newFlowNode],
+          };
+        }),
       updatePayout: (id, payout) =>
         set((state) => ({
           payouts: state.payouts.map((entry) => (entry.id === id ? { ...entry, ...payout } : entry)),

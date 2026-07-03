@@ -1,6 +1,6 @@
-export type AccountStatus = "Active" | "Passed" | "Failed" | "Pending";
-export type ChallengeType = "Two-Step" | "One-Step" | "Evaluation" | "Express";
-export type Platform = "FTMO" | "MyForexFunds" | "The5ers" | "FundedNext" | "True Forex Funds" | "FundingPips" | "Other";
+export type AccountStatus = "Active" | "Passed" | "Failed" | "Pending" | "Live Account" | "Breached" | "Phase 1" | "Phase 2" | "Challenge";
+export type ChallengeType = "Two-Step" | "One-Step" | "Instant Funding" | "Evaluation" | "Express";
+export type Platform = string;
 export type Currency = "USD" | "INR";
 export type FlowNodeType = "Payout" | "Account" | "Passed" | "Savings" | "Expense" | "Donation" | "Equipment" | "Broker Deposit" | "Broker Withdrawal" | "Loss" | "Trading Profit" | "Transfer";
 export type BrokerStatus = "Active" | "Offline" | "Suspended";
@@ -35,7 +35,7 @@ export interface Payout {
   amount: number;
   date: string;
   firm: string;
-  accountId?: string;
+  accountId: string;
   paymentMethod: string;
   transactionId: string;
   screenshot: string;
@@ -111,6 +111,7 @@ export interface FinanceState {
   addAccount: (account: Omit<Account, "id">) => void;
   updateAccount: (id: string, account: Partial<Account>) => void;
   addPayout: (payout: Omit<Payout, "id">) => void;
+  recordPayout: (payout: Omit<Payout, "id">) => void;
   updatePayout: (id: string, payout: Partial<Payout>) => void;
   addBroker: (broker: Omit<Broker, "id">) => void;
   updateBroker: (id: string, broker: Partial<Broker>) => void;
