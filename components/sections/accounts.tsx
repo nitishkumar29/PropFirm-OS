@@ -61,8 +61,9 @@ function generateAccountNumber(firm: string, size: number, existingAccounts: Arr
 }
 
 export function AccountsSection() {
-  const { accounts, settings, searchQuery, addAccount } = useFinanceStore();
+  const { accounts, settings, searchQuery, addAccount, propFirms, addPropFirm } = useFinanceStore();
   const [showForm, setShowForm] = useState(false);
+  const [firmSearch, setFirmSearch] = useState(propFirms[0] ?? "");
 
   const {
     register,
@@ -71,10 +72,11 @@ export function AccountsSection() {
     reset,
     setError,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<AccountFormValues>({
     defaultValues: {
-      firm: "FundingPips",
+      firm: propFirms[0] ?? "",
       size: 100000,
       challengeType: "Two-Step",
       platform: "MT5",
@@ -86,6 +88,7 @@ export function AccountsSection() {
 
   const challengeType = useWatch({ control, name: "challengeType" });
   const status = useWatch({ control, name: "status" }) as (typeof accountStatusOptions)[number];
+  const firm = useWatch({ control, name: "firm" });
 
   useEffect(() => {
     if (challengeType === "Instant Funding") {
@@ -106,6 +109,14 @@ export function AccountsSection() {
     if (!term) return accounts;
     return accounts.filter((account) => [account.firm, account.platform, account.status, account.notes].join(" ").toLowerCase().includes(term));
   }, [accounts, searchQuery]);
+
+  const firmSuggestions = useMemo(() => {
+    const query = firmSearch.trim().toLowerCase();
+    if (!query) return propFirms;
+    return propFirms.filter((item) => item.toLowerCase().includes(query));
+  }, [firmSearch, propFirms]);
+
+  const canCreateFirm = firmSearch.trim().length > 0 && !propFirms.some((item) => item.toLowerCase() === firmSearch.trim().toLowerCase());
 
   const summary = useMemo(
     () => ({
@@ -150,7 +161,7 @@ export function AccountsSection() {
     });
 
     reset({
-      firm: "FundingPips",
+      firm: propFirms[0] ?? "",
       size: 100000,
       challengeType: "Two-Step",
       platform: "MT5",
@@ -158,6 +169,7 @@ export function AccountsSection() {
       purchaseDate: new Date().toISOString().slice(0, 10),
       notes: "",
     });
+    setFirmSearch(propFirms[0] ?? "");
     setShowForm(false);
   };
 
@@ -193,22 +205,53 @@ export function AccountsSection() {
         <form onSubmit={handleSubmit(onSubmit)} className="rounded-[24px] border border-white/10 bg-slate-900/70 p-4">
           <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
             <div className="space-y-4">
-              <div>
+              <div className="relative">
                 <p className="text-sm text-slate-400">Step 1</p>
                 <p className="text-lg font-semibold text-white">Select Prop Firm</p>
-                <select {...register("firm")} className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none">
-                  {[
-                    "FundingPips",
-                    "FTMO",
-                    "MyForexFunds",
-                    "The5ers",
-                    "FundedNext",
-                    "True Forex Funds",
-                    "Other",
-                  ].map((firm) => (
-                    <option key={firm} value={firm}>{firm}</option>
-                  ))}
-                </select>
+                <input type="hidden" {...register("firm")} />
+                <input
+                  type="text"
+                  value={firmSearch}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setFirmSearch(value);
+                    setValue("firm", value);
+                  }}
+                  placeholder="Search or type a prop firm"
+                  className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none"
+                />
+                {firmSuggestions.length > 0 && (
+                  <div className="mt-2 max-h-44 overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/95 p-2 shadow-xl">
+                    {firmSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => {
+                          setFirmSearch(suggestion);
+                          setValue("firm", suggestion);
+                        }}
+                        className="w-full rounded-2xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-900"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {canCreateFirm && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const normalized = firmSearch.trim();
+                      setFirmSearch(normalized);
+                      setValue("firm", normalized);
+                      addPropFirm(normalized);
+                    }}
+                    className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/15"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create New Prop Firm
+                  </button>
+                )}
                 {errors.firm && <p className="mt-2 text-sm text-rose-400">{errors.firm.message}</p>}
               </div>
 

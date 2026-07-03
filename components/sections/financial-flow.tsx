@@ -19,6 +19,11 @@ const nodeColors: Record<string, string> = {
   Loss: "#ef4444",
   "Trading Profit": "#84cc16",
   Transfer: "#64748b",
+  Reinvest: "#818cf8",
+  Investment: "#8b5cf6",
+  "Home / Family": "#fb923c",
+  "Self Investment": "#f472b6",
+  Other: "#94a3b8",
 };
 
 function FlowCanvas() {

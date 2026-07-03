@@ -2,11 +2,12 @@
 
 import { motion } from "framer-motion";
 import { Plus, SearchX } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useFinanceStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { Payout } from "@/lib/types";
 
 const payoutSchema = z.object({
   accountId: z.string().min(1, "Select a live account."),
@@ -19,10 +20,74 @@ const payoutSchema = z.object({
 
 type PayoutFormValues = z.infer<typeof payoutSchema>;
 
+type AllocationRow = {
+  id: string;
+  category: string;
+  amount: number;
+  notes: string;
+  color: string;
+};
+
+const allocationColors: Record<string, string> = {
+  Reinvest: "#6366f1",
+  Savings: "#4ade80",
+  "Home / Family": "#f97316",
+  "Self Investment": "#ec4899",
+  Equipment: "#06b6d4",
+  Donation: "#f472b6",
+  "Broker Deposit": "#60a5fa",
+  Investment: "#a78bfa",
+  "Personal Expense": "#f59e0b",
+  Other: "#94a3b8",
+};
+
+const defaultAllocationCategories = [
+  "Reinvest",
+  "Savings",
+  "Home / Family",
+  "Self Investment",
+  "Equipment",
+  "Donation",
+  "Broker Deposit",
+  "Investment",
+  "Personal Expense",
+  "Other",
+];
+
+function buildDefaultAllocations(amount: number) {
+  const tentative = [
+    { category: "Reinvest", ratio: 0.25 },
+    { category: "Savings", ratio: 0.18 },
+    { category: "Broker Deposit", ratio: 0.2 },
+    { category: "Investment", ratio: 0.15 },
+    { category: "Home / Family", ratio: 0.1 },
+    { category: "Donation", ratio: 0.05 },
+    { category: "Self Investment", ratio: 0.04 },
+    { category: "Equipment", ratio: 0.03 },
+  ];
+  const allocations = tentative.map((entry) => ({
+    id: crypto.randomUUID(),
+    category: entry.category,
+    amount: Math.max(0, Math.round(amount * entry.ratio)),
+    notes: "",
+    color: allocationColors[entry.category] ?? "#64748b",
+  }));
+  const allocated = allocations.reduce((sum, item) => sum + item.amount, 0);
+  const remainder = amount - allocated;
+  if (remainder > 0) {
+    allocations[0].amount += remainder;
+  }
+  return allocations;
+}
+
 export function PayoutsSection() {
   const { payouts, accounts, settings, recordPayout } = useFinanceStore();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [accountSearch, setAccountSearch] = useState("");
+  const [allocationStep, setAllocationStep] = useState(false);
+  const [pendingPayout, setPendingPayout] = useState<Omit<Payout, "id"> | null>(null);
+  const [allocationRows, setAllocationRows] = useState<AllocationRow[]>([]);
+  const [keepRemainingCash, setKeepRemainingCash] = useState(false);
 
   const liveAccounts = useMemo(() => accounts.filter((account) => account.status === "Live Account"), [accounts]);
 
@@ -57,6 +122,24 @@ export function PayoutsSection() {
 
   const watchedAccountId = useWatch({ control, name: "accountId" });
 
+  const allocatedTotal = allocationRows.reduce((sum, allocation) => sum + allocation.amount, 0);
+  const payoutAmount = pendingPayout?.amount ?? 0;
+  const remainingAmount = pendingPayout ? payoutAmount - allocatedTotal : 0;
+  const percentageAllocated = pendingPayout && payoutAmount > 0 ? (allocatedTotal / payoutAmount) * 100 : 0;
+  const hasMissingCategory = allocationRows.some((allocation) => allocation.category.trim().length === 0);
+  const categoryNames = allocationRows.map((allocation) => allocation.category.trim().toLowerCase()).filter(Boolean);
+  const hasDuplicateCategories = new Set(categoryNames).size !== categoryNames.length;
+  const hasNegativeAllocation = allocationRows.some((allocation) => allocation.amount < 0);
+  const canSaveAllocation = Boolean(
+    pendingPayout &&
+      remainingAmount >= 0 &&
+      (remainingAmount === 0 || keepRemainingCash) &&
+      !hasMissingCategory &&
+      !hasDuplicateCategories &&
+      !hasNegativeAllocation &&
+      allocationRows.length > 0
+  );
+
   const filteredPayouts = useMemo(() => {
     const term = accountSearch.toLowerCase().trim();
     if (!term) return payouts;
@@ -70,11 +153,7 @@ export function PayoutsSection() {
     return { total, average, latest };
   }, [payouts]);
 
-  const allocationDefaults = (amount: number) => [
-    { id: crypto.randomUUID(), category: "Savings", amount: Math.round(amount * 0.3), color: "#4ade80" },
-    { id: crypto.randomUUID(), category: "Broker Deposit", amount: Math.round(amount * 0.4), color: "#60a5fa" },
-    { id: crypto.randomUUID(), category: "Personal Expense", amount: amount - Math.round(amount * 0.3) - Math.round(amount * 0.4), color: "#f59e0b" },
-  ];
+  const allocationDefaults = (amount: number) => buildDefaultAllocations(amount);
 
   const onSubmit = (values: PayoutFormValues) => {
     const parsed = payoutSchema.safeParse(values);
@@ -102,7 +181,8 @@ export function PayoutsSection() {
       return;
     }
 
-    recordPayout({
+    const defaultAllocations = buildDefaultAllocations(parsed.data.amount);
+    setPendingPayout({
       accountId: parsed.data.accountId,
       amount: parsed.data.amount,
       date: parsed.data.date,
@@ -111,7 +191,56 @@ export function PayoutsSection() {
       transactionId: parsed.data.transactionId,
       screenshot: "",
       notes: parsed.data.notes ?? "",
-      allocations: allocationDefaults(parsed.data.amount),
+      allocations: defaultAllocations,
+    });
+    setAllocationRows(defaultAllocations);
+    setAllocationStep(true);
+  };
+
+  const addAllocationRow = () => {
+    setAllocationRows((rows) => [
+      ...rows,
+      { id: crypto.randomUUID(), category: "", amount: 0, notes: "", color: "#94a3b8" },
+    ]);
+  };
+
+  const updateAllocationRow = (id: string, field: keyof AllocationRow, value: string | number) => {
+    setAllocationRows((rows) =>
+      rows.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              [field]: field === "amount" ? Number(value) : String(value),
+            }
+          : row
+      )
+    );
+  };
+
+  const removeAllocationRow = (id: string) => {
+    setAllocationRows((rows) => rows.filter((row) => row.id !== id));
+  };
+
+  const cancelAllocation = () => {
+    setAllocationStep(false);
+    setPendingPayout(null);
+    setAllocationRows([]);
+    setKeepRemainingCash(false);
+  };
+
+  const saveAllocation = () => {
+    if (!pendingPayout || !canSaveAllocation) return;
+    const allocations = allocationRows.map((row) => ({
+      id: row.id,
+      category: row.category.trim(),
+      amount: row.amount,
+      notes: row.notes,
+      color: allocationColors[row.category] ?? row.color ?? "#94a3b8",
+    }));
+
+    recordPayout({
+      ...pendingPayout,
+      allocations,
     });
 
     reset({
@@ -123,6 +252,10 @@ export function PayoutsSection() {
       notes: "",
     });
     setSelectedAccountId(liveAccounts[0]?.id ?? "");
+    setAllocationStep(false);
+    setPendingPayout(null);
+    setAllocationRows([]);
+    setKeepRemainingCash(false);
     setIsFormOpen(false);
   };
 
@@ -154,10 +287,10 @@ export function PayoutsSection() {
         </div>
       </div>
 
-      {isFormOpen && (
+      {isFormOpen && !allocationStep && (
         <form onSubmit={handleSubmit(onSubmit)} className="rounded-[24px] border border-white/10 bg-slate-900/70 p-4">
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="space-y-4">
+              <div className="space-y-4">
               <div>
                 <div className="flex items-center justify-between">
                   <div>
@@ -256,6 +389,127 @@ export function PayoutsSection() {
             </div>
           </div>
         </form>
+      )}
+      {isFormOpen && allocationStep && pendingPayout && (
+        <div className="rounded-[24px] border border-white/10 bg-slate-900/70 p-4">
+          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-4">
+                <p className="text-sm text-slate-400">Allocate this payout</p>
+                <p className="mt-3 text-3xl font-semibold text-white">{formatCurrency(pendingPayout.amount, settings.currency)}</p>
+                <p className="mt-2 text-sm text-slate-400">{pendingPayout.firm} • {formatDate(pendingPayout.date)}</p>
+                <p className="mt-4 text-sm text-slate-400">Transaction ID: {pendingPayout.transactionId}</p>
+              </div>
+
+              {allocationRows.map((row) => (
+                <div key={row.id} className="grid gap-3 lg:grid-cols-[1.4fr_0.8fr_1.2fr_auto]">
+                  <div>
+                    <p className="text-sm text-slate-400">Category</p>
+                    <input
+                      value={row.category}
+                      onChange={(event) => updateAllocationRow(row.id, "category", event.target.value)}
+                      placeholder="Category name"
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Amount</p>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.amount}
+                      onChange={(event) => updateAllocationRow(row.id, "amount", Number(event.target.value))}
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Notes</p>
+                    <input
+                      value={row.notes}
+                      onChange={(event) => updateAllocationRow(row.id, "notes", event.target.value)}
+                      placeholder="Optional notes"
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAllocationRow(row.id)}
+                    className="mt-7 inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 bg-rose-500/10 px-4 text-sm text-rose-300 transition hover:bg-rose-500/15"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={addAllocationRow}
+                  className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/15"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Custom Allocation
+                </button>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={keepRemainingCash}
+                    onChange={(event) => setKeepRemainingCash(event.target.checked)}
+                    className="h-4 w-4 rounded border-white/10 bg-slate-950 text-cyan-500"
+                  />
+                  Keep Remaining Cash
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                {hasMissingCategory && <p className="text-sm text-rose-400">All allocations must have a category name.</p>}
+                {hasDuplicateCategories && <p className="text-sm text-rose-400">Duplicate categories are not allowed.</p>}
+                {hasNegativeAllocation && <p className="text-sm text-rose-400">Allocation amounts must be zero or positive.</p>}
+                {remainingAmount < 0 && <p className="text-sm text-rose-400">Allocated amount exceeds the payout total.</p>}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!canSaveAllocation}
+                  onClick={saveAllocation}
+                  className={`inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-semibold text-white transition ${canSaveAllocation ? "bg-gradient-to-r from-cyan-500 to-indigo-500" : "bg-slate-700/60 cursor-not-allowed"}`}
+                >
+                  Save allocation
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelAllocation}
+                  className="inline-flex items-center justify-center rounded-full border border-white/10 bg-slate-950/70 px-5 py-3 text-sm font-semibold text-white"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/80 p-4">
+              <p className="text-sm text-slate-400">Allocation summary</p>
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-sm text-slate-400">Total payout</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatCurrency(pendingPayout.amount, settings.currency)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-sm text-slate-400">Allocated</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatCurrency(allocatedTotal, settings.currency)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-sm text-slate-400">Remaining</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{formatCurrency(remainingAmount, settings.currency)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-sm text-slate-400">Allocation</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{percentageAllocated.toFixed(1)}%</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {filteredPayouts.length === 0 ? (

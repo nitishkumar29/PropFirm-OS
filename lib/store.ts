@@ -56,9 +56,9 @@ const initialPayouts: Payout[] = [
     screenshot: "",
     notes: "First payout after passing account",
     allocations: [
-      { id: "a1", category: "Savings", amount: 800, color: "#4ade80" },
-      { id: "a2", category: "Broker Deposit", amount: 700, color: "#60a5fa" },
-      { id: "a3", category: "Equipment", amount: 500, color: "#f59e0b" },
+      { id: "a1", category: "Savings", amount: 800, notes: "Shifted into reserve", color: "#4ade80" },
+      { id: "a2", category: "Broker Deposit", amount: 700, notes: "Capital for next challenge", color: "#60a5fa" },
+      { id: "a3", category: "Equipment", amount: 500, notes: "Updated trading gear", color: "#f59e0b" },
     ],
   },
   {
@@ -72,10 +72,10 @@ const initialPayouts: Payout[] = [
     screenshot: "",
     notes: "Reward for disciplined execution",
     allocations: [
-      { id: "b1", category: "Investment", amount: 1200, color: "#a78bfa" },
-      { id: "b2", category: "Savings", amount: 1100, color: "#4ade80" },
-      { id: "b3", category: "Donation", amount: 400, color: "#f472b6" },
-      { id: "b4", category: "Personal Expense", amount: 800, color: "#fb923c" },
+      { id: "b1", category: "Investment", amount: 1200, notes: "Growth capital", color: "#a78bfa" },
+      { id: "b2", category: "Savings", amount: 1100, notes: "Cash reserve", color: "#4ade80" },
+      { id: "b3", category: "Donation", amount: 400, notes: "Community support", color: "#f472b6" },
+      { id: "b4", category: "Personal Expense", amount: 800, notes: "Living costs", color: "#fb923c" },
     ],
   },
 ];
@@ -124,6 +124,16 @@ export const useFinanceStore = create<FinanceState>()(
       brokerTransactions: initialBrokerTransactions,
       flowNodes: initialFlowNodes,
       settings: defaultSettings,
+      propFirms: [
+        "FundingPips",
+        "FTMO",
+        "The5ers",
+        "Blue Guardian",
+        "My Custom Firm",
+        "MyForexFunds",
+        "FundedNext",
+        "True Forex Funds",
+      ],
       backupHistory: [],
       activeSection: "Dashboard",
       searchQuery: "",
@@ -131,6 +141,14 @@ export const useFinanceStore = create<FinanceState>()(
         set((state) => ({
           accounts: [...state.accounts, { ...account, id: crypto.randomUUID() }],
         })),
+      addPropFirm: (firm) =>
+        set((state) => {
+          const normalized = firm.trim();
+          if (!normalized) return state;
+          const exists = state.propFirms.some((item) => item.toLowerCase() === normalized.toLowerCase());
+          if (exists) return state;
+          return { propFirms: [...state.propFirms, normalized] };
+        }),
       updateAccount: (id, account) =>
         set((state) => ({
           accounts: state.accounts.map((entry) => (entry.id === id ? { ...entry, ...account } : entry)),
@@ -144,19 +162,19 @@ export const useFinanceStore = create<FinanceState>()(
           const account = state.accounts.find((entry) => entry.id === payout.accountId);
           const firm = account?.firm ?? payout.firm;
           const newPayout = { ...payout, id: crypto.randomUUID(), firm };
-          const newFlowNode: FlowNodeModel = {
+          const allocationNodes = newPayout.allocations.map((allocation) => ({
             id: crypto.randomUUID(),
-            type: "Payout",
-            label: `${firm} payout`,
-            amount: payout.amount,
-            date: payout.date,
-            notes: payout.notes,
-            tags: ["payout"],
-            parentId: account ? `account-${account.id}` : undefined,
-          };
+            type: allocation.category,
+            label: allocation.category,
+            amount: allocation.amount,
+            date: newPayout.date,
+            notes: allocation.notes,
+            tags: ["allocation"],
+            parentId: newPayout.id,
+          }));
           return {
             payouts: [...state.payouts, newPayout],
-            flowNodes: [...state.flowNodes, newFlowNode],
+            flowNodes: [...state.flowNodes, ...allocationNodes],
           };
         }),
       updatePayout: (id, payout) =>
@@ -212,6 +230,7 @@ export const useFinanceStore = create<FinanceState>()(
         set(() => ({
           accounts: snapshot.accounts,
           payouts: snapshot.payouts,
+          propFirms: snapshot.propFirms ?? [],
           brokers: snapshot.brokers,
           brokerTransactions: snapshot.brokerTransactions,
           flowNodes: snapshot.flowNodes,
@@ -225,6 +244,7 @@ export const useFinanceStore = create<FinanceState>()(
       partialize: (state) => ({
         accounts: state.accounts,
         payouts: state.payouts,
+        propFirms: state.propFirms,
         brokers: state.brokers,
         brokerTransactions: state.brokerTransactions,
         flowNodes: state.flowNodes,

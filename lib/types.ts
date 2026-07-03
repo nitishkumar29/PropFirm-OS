@@ -2,7 +2,7 @@ export type AccountStatus = "Active" | "Passed" | "Failed" | "Pending" | "Live A
 export type ChallengeType = "Two-Step" | "One-Step" | "Instant Funding" | "Evaluation" | "Express";
 export type Platform = string;
 export type Currency = "USD" | "INR";
-export type FlowNodeType = "Payout" | "Account" | "Passed" | "Savings" | "Expense" | "Donation" | "Equipment" | "Broker Deposit" | "Broker Withdrawal" | "Loss" | "Trading Profit" | "Transfer";
+export type FlowNodeType = string;
 export type BrokerStatus = "Active" | "Offline" | "Suspended";
 export type BrokerTransactionType = "Deposit" | "Withdrawal" | "Profit" | "Loss" | "Commission" | "Swap" | "Transfer";
 
@@ -27,6 +27,7 @@ export interface AllocationItem {
   id: string;
   category: string;
   amount: number;
+  notes: string;
   color: string;
 }
 
@@ -101,6 +102,7 @@ export interface FlowNodeModel {
 export interface FinanceState {
   accounts: Account[];
   payouts: Payout[];
+  propFirms: string[];
   brokers: Broker[];
   brokerTransactions: BrokerTransaction[];
   flowNodes: FlowNodeModel[];
@@ -109,6 +111,7 @@ export interface FinanceState {
   activeSection: string;
   searchQuery: string;
   addAccount: (account: Omit<Account, "id">) => void;
+  addPropFirm: (firm: string) => void;
   updateAccount: (id: string, account: Partial<Account>) => void;
   addPayout: (payout: Omit<Payout, "id">) => void;
   recordPayout: (payout: Omit<Payout, "id">) => void;
@@ -127,6 +130,7 @@ export interface FinanceState {
   restoreFromBackup: (snapshot: {
     accounts: Account[];
     payouts: Payout[];
+    propFirms?: string[];
     brokers: Broker[];
     brokerTransactions: BrokerTransaction[];
     flowNodes: FlowNodeModel[];
